@@ -1,8 +1,9 @@
 import unittest
-from crawl import normalize_url
+from crawl import get_first_paragraph_from_html, normalize_url, get_heading_from_html
 
 
 class TestCrawl(unittest.TestCase):
+    # Normalize URL Tests
     def test_normalize_url(self):
         input_url = "https://www.boot.dev/blog/path"
         actual = normalize_url(input_url)
@@ -79,6 +80,136 @@ class TestCrawl(unittest.TestCase):
         input_url = "https://[2001:db8::1]:8080/path"
         actual = normalize_url(input_url)
         expected = "[2001:db8::1]/path"
+        self.assertEqual(actual, expected)
+
+    # Get Heading from HTML Tests
+    def test_html_heading_extraction_basic(self):
+        html = "<html><body><h1>Test Heading</h1></body></html>"
+        actual = get_heading_from_html(html)
+        expected = "Test Heading"
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_no_heading(self):
+        html = "<html><body><p>No heading here</p></body></html>"
+        actual = get_heading_from_html(html)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_multiple_headings(self):
+        html = "<html><body><h1>First Heading</h1><h2>Second Heading</h2></body></html>"
+        actual = get_heading_from_html(html)
+        expected = "First Heading"
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_only_h2(self):
+        html = "<html><body><h2>Only H2 Heading</h2></body></html>"
+        actual = get_heading_from_html(html)
+        expected = "Only H2 Heading"
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_headings_and_paragraphs(self):
+        html = "<html><body><h1>Main Heading</h1><p>Some text</p><h2>Subheading</h2></body></html>"
+        actual = get_heading_from_html(html)
+        expected = "Main Heading"
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_h2_and_paragraph(self):
+        html = "<html><body><h2>Subheading</h2><p>Some text</p></body></html>"
+        actual = get_heading_from_html(html)
+        expected = "Subheading"
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_paragraph_before_heading(self):
+        html = "<html><body><p>Some text</p><h1>Main Heading</h1></body></html>"
+        actual = get_heading_from_html(html)
+        expected = "Main Heading"
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_paragraph_without_heading(self):
+        html = "<html><body><p>Some text</p></body></html>"
+        actual = get_heading_from_html(html)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_paragraphs_and_no_headings(self):
+        html = "<html><body><p>Paragraph 1</p><p>Paragraph 2</p></body></html>"
+        actual = get_heading_from_html(html)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_empty_html(self):
+        html = ""
+        actual = get_heading_from_html(html)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_h3(self):
+        html = "<html><body><h3>Heading 3</h3></body></html>"
+        actual = get_heading_from_html(html)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    def test_html_heading_extraction_with_multiple_headings_that_are_not_h1_or_h2(self):
+        html = "<html><body><h3>Heading 3</h3><h4>Heading 4</h4></body></html>"
+        actual = get_heading_from_html(html)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    # Get First Paragraph from HTML Tests
+    def test_get_first_paragraph_from_html_main_priority(self):
+        input_body = """<html><body>
+            <p>Outside paragraph</p>
+            <main>
+                <p>Main paragraph</p>
+            </main>
+        </body></html>"""
+        actual = get_first_paragraph_from_html(input_body)
+        expected = "Main paragraph"
+        self.assertEqual(actual, expected)
+
+    def test_get_first_paragraph_from_html_no_main(self):
+        input_body = """<html><body>
+            <p>First paragraph</p>
+            <p>Second paragraph</p>
+        </body></html>"""
+        actual = get_first_paragraph_from_html(input_body)
+        expected = "First paragraph"
+        self.assertEqual(actual, expected)
+
+    def test_get_first_paragraph_from_html_no_paragraphs(self):
+        input_body = """<html><body>
+            <main></main>
+        </body></html>"""
+        actual = get_first_paragraph_from_html(input_body)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    def test_get_first_paragraph_from_html_empty_html(self):
+        input_body = ""
+        actual = get_first_paragraph_from_html(input_body)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    def test_get_first_paragraph_from_html_main_with_header_without_paragraph(self):
+        input_body = """<html><body>
+            <main>
+                <h1>Main Heading</h1>
+            </main>
+        </body></html>"""
+        actual = get_first_paragraph_from_html(input_body)
+        expected = ""
+        self.assertEqual(actual, expected)
+
+    def test_get_first_paragraph_from_html_main_with_multiple_paragraphs_inside_and_outside(self):
+        input_body = """<html><body>
+            <p>Outside paragraph</p>
+            <main>
+                <p>First main paragraph</p>
+                <p>Second main paragraph</p>
+            </main>
+        </body></html>"""
+        actual = get_first_paragraph_from_html(input_body)
+        expected = "First main paragraph"
         self.assertEqual(actual, expected)
 
 if __name__ == "__main__":
