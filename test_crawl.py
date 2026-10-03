@@ -75,6 +75,11 @@ class TestCrawl(unittest.TestCase):
         expected = "[2001:db8:ffff:ffff:ffff:ffff:ffff:ffff]/path"
         self.assertEqual(actual, expected)
 
+    def test_normalize_url_with_IPv6_address_and_port(self):
+        input_url = "https://[2001:db8::1]:8080/path"
+        actual = normalize_url(input_url)
+        expected = "[2001:db8::1]/path"
+        self.assertEqual(actual, expected)
 
 if __name__ == "__main__":
     unittest.main()
