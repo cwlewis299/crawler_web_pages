@@ -62,10 +62,18 @@ def get_urls_from_html(html: str, base_url: str) -> list[str] | str:
     except Exception as e:
         return f"Error occurred while parsing HTML: {e}"
 
-#def get_images_from_html(html, base_url):
+def get_images_from_html(html, base_url):
     """
     Extract all image URLs from the given HTML 
     string and returns an un-normalized list of all the image URLs 
     found within the HTML, and an error if one occurs
     """
- #   pass
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+        image_urls = []
+        for img_tag in soup.find_all('img', src=True):
+            src = img_tag['src']
+            image_urls.append(urljoin(base_url, src))
+        return image_urls
+    except Exception as e:
+        return f"Error occurred while parsing HTML: {e}"
