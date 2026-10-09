@@ -1,5 +1,5 @@
 import unittest
-from crawl import get_first_paragraph_from_html, normalize_url, get_heading_from_html
+from crawl import get_first_paragraph_from_html, normalize_url, get_heading_from_html, get_urls_from_html
 
 
 class TestCrawl(unittest.TestCase):
@@ -211,6 +211,75 @@ class TestCrawl(unittest.TestCase):
         actual = get_first_paragraph_from_html(input_body)
         expected = "First main paragraph"
         self.assertEqual(actual, expected)
+
+    # Get URLS from HTML Tests
+    def test_get_urls_from_html_absolute(self):
+        input_url = "https://crawler-test.com"
+        input_body = '<html><body><a href="https://crawler-test.com"><span>Boot.dev</span></a></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = ["https://crawler-test.com"]
+        self.assertEqual(actual, expected)
+
+    def test_get_urls_from_html_relative_in_folder(self):
+        input_url = "https://crawler-test.com"
+        input_body = '<html><body><a href="about.html"><span>Boot.dev</span></a></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = ["https://crawler-test.com/about.html"]
+        self.assertEqual(actual, expected)
+
+    def test_get_urls_from_html_relative_in_subfolder(self):
+        input_url = "https://crawler-test.com"
+        input_body = '<html><body><a href="subfolder/about.html"><span>Boot.dev</span></a></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = ["https://crawler-test.com/subfolder/about.html"]
+        self.assertEqual(actual, expected)
+
+    def test_get_urls_from_html_relative_in_parent_folder(self):
+        input_url = "https://crawler-test.com/subfolder/"
+        input_body = '<html><body><a href="../about.html"><span>Boot.dev</span></a></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = ["https://crawler-test.com/about.html"]
+        self.assertEqual(actual, expected)
+
+    def test_get_urls_from_html_relative_in_folder_explicit(self):
+        input_url = "https://crawler-test.com/"
+        input_body = '<html><body><a href="./about.html"><span>Boot.dev</span></a></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = ["https://crawler-test.com/about.html"]
+        self.assertEqual(actual, expected)
+
+    def test_get_urls_from_html_relative_in_root_relative(self):
+        input_url = "https://crawler-test.com/subfolder/sub1/sub2/"
+        input_body = '<html><body><a href="/about.html"><span>Boot.dev</span></a></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = ["https://crawler-test.com/about.html"]
+        self.assertEqual(actual, expected)
+
+    def test_get_urls_from_html_no_links(self):
+        input_url = "https://crawler-test.com"
+        input_body = '<html><body><p>This is a paragraph.</p></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = []
+        self.assertEqual(actual, expected)
+
+    def test_get_urls_from_html_multiple_links(self):
+        input_url = "https://crawler-test.com"
+        input_body = '<html><body><a href="https://crawler-test.com"><span>Boot.dev</span></a>' \
+        '<a href="about.html"><span>About</span></a></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = ["https://crawler-test.com", "https://crawler-test.com/about.html"]
+        self.assertEqual(actual, expected)
+
+    def test_get_urls_from_html_with_image(self):
+        input_url = "https://crawler-test.com"
+        input_body = '<html><body><a href="https://crawler-test.com"><img src="image.jpg" alt="Image"></a>' \
+        '<a href="about.html"><span>About</span></a></body></html>'
+        actual = get_urls_from_html(input_body, input_url)
+        expected = ["https://crawler-test.com", "https://crawler-test.com/about.html"]
+        self.assertEqual(actual, expected)
+
+
+
 
 if __name__ == "__main__":
     unittest.main()
