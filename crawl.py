@@ -1,6 +1,7 @@
 from urllib.parse import urlsplit, urljoin
 from typing import TypedDict
 from bs4 import BeautifulSoup
+import requests
 
 class PageData(TypedDict):
     url: str
@@ -100,3 +101,21 @@ def extract_page_data(html: str, page_url: str) -> PageData:
         "image_urls": get_images_from_html(html, page_url),
     }
     return dict_data
+
+def get_html(url: str) -> str:
+    """
+    Fetches the HTML content of the given URL and returns it as a string.
+    If an error occurs, raises an error
+    """
+    try:
+        response = requests.get(url, headers={'User-Agent': "Mozilla/5.0 "
+        "(Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.3"})
+        response.raise_for_status()  # Raise an error for bad responses (4xx and 5xx)
+        #print(f"{response.headers}")
+        if 'text/html' not in response.headers['Content-Type']:
+            raise RuntimeError(f"URL {url} did not return HTML content.")
+        return response.text
+        
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Error occurred while fetching HTML from {url}: {e}")
