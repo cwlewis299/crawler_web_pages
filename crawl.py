@@ -1,5 +1,13 @@
 from urllib.parse import urlsplit, urljoin
-from bs4 import BeautifulSoup, Tag # type: ignore
+from typing import TypedDict
+from bs4 import BeautifulSoup
+
+class PageData(TypedDict):
+    url: str
+    heading: str
+    first_paragraph: str
+    outgoing_links: list[str]
+    image_urls: list[str]
 
 def normalize_url(url):
     """
@@ -77,3 +85,18 @@ def get_images_from_html(html, base_url):
         return image_urls
     except Exception as e:
         return f"Error occurred while parsing HTML: {e}"
+
+
+def extract_page_data(html: str, page_url: str) -> PageData:
+    """
+    Extracts the URLs, heading, first paragraph, outgoing links, and image URLs from 
+    the given HTML string and returns a dictionary containing the extracted data.
+    """
+    dict_data = {
+        "url": page_url,
+        "heading": get_heading_from_html(html),
+        "first_paragraph": get_first_paragraph_from_html(html),
+        "outgoing_links": get_urls_from_html(html, page_url),
+        "image_urls": get_images_from_html(html, page_url),
+    }
+    return dict_data
