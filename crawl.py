@@ -1,7 +1,10 @@
+import asyncio
+import requests
+import aiohttp
 from urllib.parse import urlsplit, urljoin
 from typing import TypedDict
 from bs4 import BeautifulSoup
-import requests
+
 
 class PageData(TypedDict):
     url: str
@@ -9,6 +12,138 @@ class PageData(TypedDict):
     first_paragraph: str
     outgoing_links: list[str]
     image_urls: list[str]
+
+class AsyncCrawler:
+    def __init__(self, base_url: str):
+        self.base_url = base_url
+        self.base_domain = self.get_base_domain(base_url)
+        self.page_data: dict[str, PageData] = {}
+        self.visited: set[str] = set()
+        self.lock = asyncio.Lock()
+        self.max_concurrency = 3  # Limit the number of concurrent requests
+        self.semaphore = asyncio.Semaphore(self.max_concurrency)
+        self.session: aiohttp.ClientSession | None = None
+
+    def get_base_domain(self, url: str) -> str:
+        """
+        Extract the base domain from the given URL.
+        """
+        split_url = urlsplit(url)
+        if split_url.netloc.startswith("["):  # Check for port number and exclude IPv6 addresses
+            netloc = split_url.netloc.split("]")[0] + "]"  # Keep the IPv6 address and remove the port
+        elif ":" in split_url.netloc:  # Check for port number
+            netloc = split_url.netloc.split(":")[0]  # Keep the domain and remove the port
+        else:
+            netloc = split_url.netloc
+        return netloc
+
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.session.close()
+
+    async def add_page_visit(self, normalized_url: str):
+        """
+        Add a normalized URL to the visited set in a thread-safe manner.
+        """
+        #print(f"Adding page visit for: {normalized_url}")
+        async with self.lock:
+            if normalized_url in self.visited:
+                return False  # URL has already been visited
+            self.visited.add(normalized_url)
+            #print(f"Visited URLs: {self.visited}")
+            return True  # URL added successfully
+
+    async def get_html(self, url: str) -> str:
+        """
+        Fetches the HTML content of the given URL and returns it as a string.
+        If an error occurs, raises an error
+        """
+        #print(f"ATTEMPTING to fetch HTML for: {url}")
+        try:
+            async with self.session.get(url, headers={'User-Agent': "Mozilla/5.0 "
+                "(Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.3"}) as response:
+                #print(f"***Response status: {response.status} for URL: {url}")
+                response.raise_for_status()  # Raise an error for bad responses (4xx and 5xx)
+                #print(f"{response.headers}")
+                #print(f"***Content-Type: {response.headers.get('Content-Type')} for URL: {url}")
+                if 'text/html' not in response.headers['Content-Type']:
+                    raise RuntimeError(f"URL {url} did not return HTML content.")
+                #print(f"***GOT HTML for: {url} (length: {len(await response.text())})")  # Print the length of the HTML for debugging
+                return await response.text() 
+            
+        except aiohttp.ClientError as e:
+            #print(f"OMG we had an error in get_html)")
+            raise RuntimeError(f"Error occurred while fetching HTML from {url}: {e}")
+
+    async def crawl_page(self, current_url: str=None):
+        """
+        Crawls the given base URL and extracts the page data for each page found.
+        Returns a dictionary containing the extracted data for each page.
+        """
+        #print(f"Started crawl_page method for: {current_url if current_url else self.base_url}")
+
+        if current_url is None:
+            current_url = self.base_url
+
+        normalized_current_url = normalize_url(current_url)
+        normalized_base_url = normalize_url(self.base_url)
+
+        #print(f"Normalized current URL: {normalized_current_url}")
+
+        # Check if the current URL is within the base URL's domain
+        if normalized_base_url not in normalized_current_url:
+            return self.page_data
+        
+        # Call and await add_page_visit to check if the URL has already been visited
+        if not await self.add_page_visit(normalized_current_url):
+            return self.page_data
+
+        #print(f"Visiting URL: {current_url}")
+
+        async with self.semaphore:  # Limit the number of concurrent requests
+            try:
+                html = await self.get_html(current_url)
+                #print(f"***FETCHED HTML: {len(html)}...")  # Print the first 100 characters of the HTML for debugging
+                extract_data = extract_page_data(html, current_url)
+            except Exception as e:
+                print(f"Error occurred while crawling {current_url}: {e}")
+            
+        async with self.lock:
+            #print(f"LOCKED and adding page data for: {normalized_current_url} with data")
+            self.page_data[normalized_current_url] = extract_data
+            #print(f"Page data added for: {normalized_current_url}. Total pages crawled so far: {len(self.page_data)}")
+
+        outgoing_links = self.page_data[normalized_current_url]["outgoing_links"]
+        tasks = []
+        for link in outgoing_links:
+            #print(f"CRAWLING LINK: {link}")
+            tasks.append(asyncio.create_task(self.crawl_page(link)))  # Recursively crawl the outgoing links
+            #print(f"Created task for link: {link}")
+        await asyncio.gather(*tasks)  # Wait for the task to complete
+        #print("Completed TASKS")
+            #crawl_page(base_url, link, page_data) # Recursively crawl the outgoing links
+        return self.page_data
+            
+
+    async def crawl(self):
+        """
+        Starts the crawling process from the base URL.
+        Returns a dictionary containing the extracted data for each page.
+        """
+        #print(f"Started crawl function for: {self.base_url}")
+        return await self.crawl_page(self.base_url)
+
+async def crawl_site_async(base_url: str) -> dict[str, PageData]:
+    """
+    Asynchronously crawls the given base URL and returns a dictionary containing the extracted data for each page.
+    """
+    async with AsyncCrawler(base_url) as crawler:
+        #print(f"Started AsyncCrawler of: {base_url}")
+        return await crawler.crawl()
 
 def normalize_url(url):
     """
@@ -102,11 +237,8 @@ def extract_page_data(html: str, page_url: str) -> PageData:
     }
     return dict_data
 
-def get_html(url: str) -> str:
-    """
-    Fetches the HTML content of the given URL and returns it as a string.
-    If an error occurs, raises an error
-    """
+"""def get_html(url: str) -> str:
+    
     try:
         response = requests.get(url, headers={'User-Agent': "Mozilla/5.0 "
         "(Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -118,13 +250,10 @@ def get_html(url: str) -> str:
         return response.text
         
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Error occurred while fetching HTML from {url}: {e}")
+        raise RuntimeError(f"Error occurred while fetching HTML from {url}: {e}")"""
 
-def crawl_page(base_url: str, current_url: str=None, page_data: dict[str, PageData]=None):
-    """
-    Crawls the given base URL and extracts the page data for each page found.
-    Returns a dictionary containing the extracted data for each page.
-    """
+"""def crawl_page(base_url: str, current_url: str=None, page_data: dict[str, PageData]=None):
+    
     if page_data is None:
         page_data = {}
 
@@ -152,4 +281,4 @@ def crawl_page(base_url: str, current_url: str=None, page_data: dict[str, PageDa
             crawl_page(base_url, link, page_data) # Recursively crawl the outgoing links
         return page_data
     except Exception as e:
-        print(f"Error occurred while crawling {current_url}: {e}")
+        print(f"Error occurred while crawling {current_url}: {e}")"""
