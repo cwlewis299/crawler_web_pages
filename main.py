@@ -1,5 +1,5 @@
 import sys
-from crawl import get_html
+from crawl import crawl_page
 
 def main():
     if len(sys.argv) < 2:
@@ -14,7 +14,15 @@ def main():
         base_url = sys.argv[1]
         print(f"starting crawl of: {base_url}")
         try:
-            print(f"{get_html(base_url)}")
+            page_data = crawl_page(base_url)
+            for url, data in page_data.items():
+                #print(f"\nURL: {url}")
+                print(f"\nHeading: {data['heading']}")
+                print(f"-First Paragraph: {data['first_paragraph']}")
+                #print(f"Outgoing Links: {data['outgoing_links']}")
+                #print(f"Image URLs: {data['image_urls']}")
+                
+            print(f"\nTotal pages crawled: {len(page_data)}")
         except Exception as e:
             print(f"Error occurred while fetching HTML: {e}")
             sys.exit(1)

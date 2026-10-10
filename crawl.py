@@ -119,3 +119,37 @@ def get_html(url: str) -> str:
         
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Error occurred while fetching HTML from {url}: {e}")
+
+def crawl_page(base_url: str, current_url: str=None, page_data: dict[str, PageData]=None):
+    """
+    Crawls the given base URL and extracts the page data for each page found.
+    Returns a dictionary containing the extracted data for each page.
+    """
+    if page_data is None:
+        page_data = {}
+
+    if current_url is None:
+        current_url = base_url
+
+    normalized_current_url = normalize_url(current_url)
+    normalized_base_url = normalize_url(base_url)
+
+    # Check if the current URL is within the base URL's domain
+    if normalized_base_url not in normalized_current_url:
+        return page_data
+
+    # Check if the current URL has already been crawled
+    if normalized_current_url in page_data:
+        return page_data
+
+    try:
+        html = get_html(current_url)
+        page_data[normalized_current_url] = extract_page_data(html, current_url)
+        outgoing_links = page_data[normalized_current_url]["outgoing_links"]
+
+        for link in outgoing_links:
+            print(f"Crawling link: {link}")
+            crawl_page(base_url, link, page_data) # Recursively crawl the outgoing links
+        return page_data
+    except Exception as e:
+        print(f"Error occurred while crawling {current_url}: {e}")
