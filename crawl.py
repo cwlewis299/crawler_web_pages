@@ -1,8 +1,9 @@
 import asyncio
-import requests
-import aiohttp
+from types import TracebackType
 from urllib.parse import urlsplit, urljoin
 from typing import TypedDict
+
+import aiohttp
 from bs4 import BeautifulSoup
 
 
@@ -20,9 +21,10 @@ class AsyncCrawler:
         self.page_data: dict[str, PageData] = {}
         self.visited: set[str] = set()
         self.lock = asyncio.Lock()
-        self.max_concurrency = 3  # Limit the number of concurrent requests
+        self.max_concurrency: int = 5  # Limit the number of concurrent requests
         self.semaphore = asyncio.Semaphore(self.max_concurrency)
         self.session: aiohttp.ClientSession | None = None
+        self.max_pages: int = 100  # Limit the number of pages to crawl
 
     def get_base_domain(self, url: str) -> str:
         """
@@ -37,14 +39,19 @@ class AsyncCrawler:
             netloc = split_url.netloc
         return netloc
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "AsyncCrawler":
         self.session = aiohttp.ClientSession()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+            self, 
+            exc_type: type[BaseException] | None, 
+            exc_val: BaseException | None, 
+            exc_tb: TracebackType | None,
+        ) -> None:
         await self.session.close()
 
-    async def add_page_visit(self, normalized_url: str):
+    async def add_page_visit(self, normalized_url: str) -> bool:
         """
         Add a normalized URL to the visited set in a thread-safe manner.
         """
@@ -56,33 +63,47 @@ class AsyncCrawler:
             #print(f"Visited URLs: {self.visited}")
             return True  # URL added successfully
 
-    async def get_html(self, url: str) -> str:
+    async def get_html(self, url: str) -> str | None:
         """
         Fetches the HTML content of the given URL and returns it as a string.
         If an error occurs, raises an error
         """
+        if self.session is None:
+            return None  # Session is not initialized
+        
         #print(f"ATTEMPTING to fetch HTML for: {url}")
         try:
-            async with self.session.get(url, headers={'User-Agent': "Mozilla/5.0 "
+            async with self.session.get(
+                url, headers={'User-Agent': "Mozilla/5.0 "
                 "(Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.3"}) as response:
+                "Chrome/122.0.0.0 Safari/537.3"}
+                ) as response:
+
                 #print(f"***Response status: {response.status} for URL: {url}")
-                response.raise_for_status()  # Raise an error for bad responses (4xx and 5xx)
+                if response.status > 399:
+                    print(f"Error: HTTP error {response.status} for URL: {url}")
+                    return None  # Return None if the response status is an error
+                
                 #print(f"{response.headers}")
                 #print(f"***Content-Type: {response.headers.get('Content-Type')} for URL: {url}")
                 if 'text/html' not in response.headers['Content-Type']:
-                    raise RuntimeError(f"URL {url} did not return HTML content.")
+                    print(f"Error: URL {url} did not return HTML content. Content-Type: {response.headers['Content-Type']}")
+                    return None  # Return None if the content is not HTML
+                
                 #print(f"***GOT HTML for: {url} (length: {len(await response.text())})")  # Print the length of the HTML for debugging
                 return await response.text() 
             
-        except aiohttp.ClientError as e:
+        except Exception as e:
             #print(f"OMG we had an error in get_html)")
-            raise RuntimeError(f"Error occurred while fetching HTML from {url}: {e}")
+            print(f"Error occurred while fetching HTML from {url}: {e}")
+            return None  # Return None if an exception occurs
 
-    async def crawl_page(self, current_url: str=None):
+    async def crawl_page(self, current_url: str=None) -> None:
         """
         Crawls the given base URL and extracts the page data for each page found.
-        Returns a dictionary containing the extracted data for each page.
+        The method is recursive and will continue to crawl outgoing links until all pages have been visited or the maximum number of pages has been reached.
+        Mutates the page_data dictionary with the extracted data for each page.
+        Prints active crawling statements and any skipped pages.
         """
         #print(f"Started crawl_page method for: {current_url if current_url else self.base_url}")
 
@@ -96,17 +117,23 @@ class AsyncCrawler:
 
         # Check if the current URL is within the base URL's domain
         if normalized_base_url not in normalized_current_url:
-            return self.page_data
+            return
         
         # Call and await add_page_visit to check if the URL has already been visited
         if not await self.add_page_visit(normalized_current_url):
-            return self.page_data
+            return
 
         #print(f"Visiting URL: {current_url}")
 
         async with self.semaphore:  # Limit the number of concurrent requests
             try:
+                print(
+                    f"Crawling {current_url} (Active: {self.max_concurrency - self.semaphore._value}/{self.max_concurrency})"
+                )
                 html = await self.get_html(current_url)
+                if html is None:
+                    print(f"Error: No HTML to fetch for {current_url}. Skipping this page.")
+                    return
                 #print(f"***FETCHED HTML: {len(html)}...")  # Print the first 100 characters of the HTML for debugging
                 extract_data = extract_page_data(html, current_url)
             except Exception as e:
@@ -126,16 +153,16 @@ class AsyncCrawler:
         await asyncio.gather(*tasks)  # Wait for the task to complete
         #print("Completed TASKS")
             #crawl_page(base_url, link, page_data) # Recursively crawl the outgoing links
-        return self.page_data
             
 
-    async def crawl(self):
+    async def crawl(self) -> dict[str, PageData]:
         """
         Starts the crawling process from the base URL.
         Returns a dictionary containing the extracted data for each page.
         """
         #print(f"Started crawl function for: {self.base_url}")
-        return await self.crawl_page(self.base_url)
+        await self.crawl_page(self.base_url)
+        return self.page_data
 
 async def crawl_site_async(base_url: str) -> dict[str, PageData]:
     """
