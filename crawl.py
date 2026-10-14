@@ -15,16 +15,16 @@ class PageData(TypedDict):
     image_urls: list[str]
 
 class AsyncCrawler:
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, max_concurrency: int = 5, max_pages: int = 20):
         self.base_url = base_url
         self.base_domain = self.get_base_domain(base_url)
         self.page_data: dict[str, PageData] = {}
         self.visited: set[str] = set()
         self.lock = asyncio.Lock()
-        self.max_concurrency: int = 5  # Limit the number of concurrent requests
+        self.max_concurrency: int = max_concurrency  # Limit the number of concurrent requests
         self.semaphore = asyncio.Semaphore(self.max_concurrency)
         self.session: aiohttp.ClientSession | None = None
-        self.max_pages: int = 20  # Limit the number of pages to crawl
+        self.max_pages: int = max_pages  # Limit the number of pages to crawl
         self.should_stop: bool = False  # Flag to indicate when to stop crawling
         self.all_tasks: set[asyncio.Task] = set()  # Keep track of all tasks for graceful shutdown
 
@@ -126,12 +126,12 @@ class AsyncCrawler:
 
         # Check if the current URL is within the base URL's domain
         if normalized_base_url not in normalized_current_url:
-            self.all_tasks.discard(asyncio.current_task())  # Remove the current task from the set of all tasks
+            print(f"Skipping URL {current_url} as it is outside the base domain {self.base_domain}.")
             return
         
         # Call and await add_page_visit to check if the URL has already been visited
         if not await self.add_page_visit(normalized_current_url):
-            self.all_tasks.discard(asyncio.current_task())  # Remove the current task from the set of all tasks
+            
             return
 
         #print(f"Visiting URL: {current_url}")
@@ -144,13 +144,13 @@ class AsyncCrawler:
                 html = await self.get_html(current_url)
                 if html is None:
                     print(f"Error: No HTML to fetch for {current_url}. Skipping this page.")
-                    self.all_tasks.discard(asyncio.current_task())  # Remove the current task from the set of all tasks
+                    
                     return
                 #print(f"***FETCHED HTML: {len(html)}...")  # Print the first 100 characters of the HTML for debugging
                 extract_data = extract_page_data(html, current_url)
             except Exception as e:
                 print(f"Error occurred while crawling {current_url}: {e}")
-                self.all_tasks.discard(asyncio.current_task())  # Remove the current task from the set of all tasks
+                
                 return
             
         async with self.lock:
@@ -169,11 +169,15 @@ class AsyncCrawler:
             #print(f"CRAWLING LINK: {link}")
             tasks.append(asyncio.create_task(self.crawl_page(link)))  # Recursively crawl the outgoing links
             #print(f"Created task for link: {link}")
-            for task in tasks:
-                self.all_tasks.add(task)
                 
-        await asyncio.gather(*tasks)
-        #print("Completed TASKS")
+        if tasks:
+            try:
+                await asyncio.gather(*tasks)
+                #print("Completed TASKS")
+            finally:
+                for task in tasks:
+                    self.all_tasks.discard(task)  # Remove the completed tasks from the set of all tasks
+            
             
 
     async def crawl(self) -> dict[str, PageData]:
@@ -185,11 +189,11 @@ class AsyncCrawler:
         await self.crawl_page(self.base_url)
         return self.page_data
 
-async def crawl_site_async(base_url: str) -> dict[str, PageData]:
+async def crawl_site_async(base_url: str, max_concurrency: int = 5, max_pages: int = 20) -> dict[str, PageData]:
     """
     Asynchronously crawls the given base URL and returns a dictionary containing the extracted data for each page.
     """
-    async with AsyncCrawler(base_url) as crawler:
+    async with AsyncCrawler(base_url, max_concurrency=max_concurrency, max_pages=max_pages) as crawler:
         #print(f"Started AsyncCrawler of: {base_url}")
         return await crawler.crawl()
 
