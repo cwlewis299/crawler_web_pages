@@ -24,7 +24,7 @@ class AsyncCrawler:
         self.max_concurrency: int = 5  # Limit the number of concurrent requests
         self.semaphore = asyncio.Semaphore(self.max_concurrency)
         self.session: aiohttp.ClientSession | None = None
-        self.max_pages: int = 100  # Limit the number of pages to crawl
+        self.max_pages: int = 20  # Limit the number of pages to crawl
         self.should_stop: bool = False  # Flag to indicate when to stop crawling
         self.all_tasks: set[asyncio.Task] = set()  # Keep track of all tasks for graceful shutdown
 
@@ -59,8 +59,12 @@ class AsyncCrawler:
         """
         #print(f"Adding page visit for: {normalized_url}")
         async with self.lock:
-            if normalized_url in self.visited:
+            if normalized_url in self.visited or self.should_stop:
                 return False  # URL has already been visited
+            if len(self.visited) >= self.max_pages:
+                self.should_stop = True  # Set the flag to stop crawling
+                print(f"Reached maximum page limit of {self.max_pages}. Stopping further crawling.")
+                return False  # Stop crawling if the maximum number of pages has been reached, but let scheduled fetches complete
             self.visited.add(normalized_url)
             #print(f"Visited URLs: {self.visited}")
             return True  # URL added successfully
@@ -108,6 +112,9 @@ class AsyncCrawler:
         Prints active crawling statements and any skipped pages.
         """
         #print(f"Started crawl_page method for: {current_url if current_url else self.base_url}")
+
+        if self.should_stop:
+            return  # Stop crawling if the maximum number of pages has been reached
 
         if current_url is None:
             current_url = self.base_url
